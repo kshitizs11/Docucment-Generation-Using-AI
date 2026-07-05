@@ -1,0 +1,35 @@
+{
+  "name": "claude-skills-base",
+  "owner": {
+    "name": "Cameron Rohn",
+    "email": "github@cameronrohn.com"
+  },
+  "metadata": {
+    "description": "Claude's container skills",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "document-skills",
+      "description": "Collection of document processing suite including Excel, Word, PowerPoint, and PDF capabilities",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./mnt/skills/public/xlsx",
+        "./mnt/skills/public/docx",
+        "./mnt/skills/public/pptx",
+        "./mnt/skills/public/pdf"
+      ]
+    },
+    {
+      "name": "example-skills",
+      "description": "Collection of example skills for music generation and code-to-music conversion",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./mnt/skills/examples/code-to-music",
+        "./mnt/skills/examples/music-generation"
+      ]
+    }
+  ]
+}
