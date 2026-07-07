@@ -30,29 +30,17 @@ Messages API behavior, and `backend/README.md` for the pipeline's internals.
 ## Step 1 — Prerequisites
 
 - Python 3.10+
-- Node.js + npm (needed by the docx/pptx generation skills themselves, not the backend)
 - A **direct Anthropic API key** (console.anthropic.com/settings/keys). A gateway/proxy
   key (TrueFoundry, Bedrock, Azure OpenAI, etc.) will not work — the code-execution and
   skills betas are Anthropic-native and aren't proxied by those gateways.
 
-## Step 2 — Install the document-generation dependencies
+**No Node/npm needed.** The actual document generation runs entirely inside Anthropic's
+sandboxed container (the OfficeSkill node's Claude call) — this machine never runs
+docx-js/html2pptx/pptxgenjs itself. The Validation node's local checks
+(`app/nodes/validation.py`) are pure Python: `unpack.py` uses `zipfile`+`defusedxml`,
+xlsx checks use `openpyxl` — both already in `backend/requirements.txt`.
 
-These are required by the skills themselves (`mnt/skills/public/*`), not by the
-backend directly — the OfficeSkill node's Claude call runs generation code inside
-Anthropic's own sandboxed container, but if you ever run any of this repo's skill
-scripts locally (e.g. for the Validation node's OOXML checks, which do run locally),
-these need to be present:
-
-```bash
-# docx
-npm install -g docx
-
-# pptx (only needed if you'll generate pptx locally / test that skill directly)
-npm install -g ./mnt/skills/public/pptx/html2pptx.tgz pptxgenjs playwright sharp
-npx playwright install chromium
-```
-
-## Step 3 — Configure the backend
+## Step 2 — Configure the backend
 
 ```bash
 cd backend
@@ -70,12 +58,17 @@ ANTHROPIC_OFFICE_SKILL_MODEL=claude-sonnet-4-6
 
 `backend/.env` is gitignored — this key never needs to leave your machine.
 
-## Step 4 — Start the server
+## Step 3 — Start the server
+
+From the repo root:
 
 ```bash
-cd backend
-uvicorn app.main:app --reload
+python app.py
 ```
+
+This is equivalent to `cd backend && uvicorn app.main:app --reload` — a thin launcher
+so you don't need to know the app lives under `backend/app/`. Pass `--no-reload` for a
+plain single-process run (no auto-restart on file changes).
 
 Confirm it's up:
 
@@ -84,7 +77,7 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
 
-## Step 5 — Use it through the UI
+## Step 4 — Use it through the UI
 
 1. Open `http://127.0.0.1:8000/` in a browser.
 2. Type a plain-English request into the prompt box, e.g.:
@@ -102,7 +95,7 @@ from the request itself. If your request is genuinely ambiguous about format, th
 Planner will pick the most likely one rather than blocking (see
 `app/nodes/planner.py`).
 
-## Step 6 — What to do if something goes wrong
+## Step 5 — What to do if something goes wrong
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|

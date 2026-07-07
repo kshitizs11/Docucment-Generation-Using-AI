@@ -20,16 +20,6 @@
         "./mnt/skills/public/pptx",
         "./mnt/skills/public/pdf"
       ]
-    },
-    {
-      "name": "example-skills",
-      "description": "Collection of example skills for music generation and code-to-music conversion",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./mnt/skills/examples/code-to-music",
-        "./mnt/skills/examples/music-generation"
-      ]
     }
   ]
 }

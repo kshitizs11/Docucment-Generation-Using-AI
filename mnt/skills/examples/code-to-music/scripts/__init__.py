@@ -1,1 +1,0 @@
-"""Generic music operation scripts for musicgeneration skill."""
