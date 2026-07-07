@@ -44,13 +44,19 @@ background (generation takes real minutes); the UI polls `GET /jobs/{id}` for li
 progress and downloads from `GET /jobs/{id}/download` once done.
 
 Full diagrams, the exact request lifecycle, and a table of what each node actually
-does: **[`ARCHITECTURE.md`](ARCHITECTURE.md)**.
+does: **[`ARCHITECTURE.md`](ARCHITECTURE.md)**. Or explore it interactively — once the
+app is running, open `http://127.0.0.1:8000/architecture` for a clickable version with
+a live format/skill-detection demo.
 
 ## What's in this repo
 
 - **`app.py`** — single entry point that starts the whole service.
 - **`ARCHITECTURE.md`** — the complete orchestration flow: system diagram, request
   lifecycle, and per-node breakdown of what calls Claude vs. what's deterministic.
+- **`INTEGRATION.md`** — how to call this as a service from another backend (API key
+  auth, the 3 endpoints you need, a Dockerfile).
+- **`Dockerfile`** — repo-root (not `backend/Dockerfile`) since the app needs
+  `mnt/skills/*` alongside `backend/` at runtime. See `INTEGRATION.md`.
 - **`backend/`** — the actual application: FastAPI app, the 7-node LangGraph pipeline,
   and the UI it serves. See `backend/README.md` for how each node works and what's
   genuinely built vs. explicitly out of scope.

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How Orchestration Works — AI Document Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+        colors: { ink: '#111827', accent: '#4F46E5' },
+        borderRadius: { xl2: '20px' },
+        boxShadow: {
+          soft: '0 1px 2px rgba(17,24,39,0.04), 0 8px 24px -8px rgba(17,24,39,0.08)',
+          softer: '0 1px 2px rgba(17,24,39,0.03), 0 2px 8px -2px rgba(17,24,39,0.06)',
+        },
+        keyframes: {
+          fadeUp: { '0%': { opacity: 0, transform: 'translateY(8px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+        },
+        animation: { fadeUp: 'fadeUp 0.3s ease-out' },
+      },
+    },
+  };
+</script>
+<style>
+  body { font-family: 'Inter', ui-sans-serif, system-ui; }
+  body { background-color: #FAFAFA; color: #111827; }
+  html.dark body { background-color: #030712; color: #f3f4f6; }
+  .card-hover { transition: transform .2s ease, box-shadow .2s ease; }
+  .card-hover:hover { transform: translateY(-2px); }
+  .node-row { cursor: pointer; }
+  .chevron { transition: transform .2s ease; }
+  .node-row.open .chevron { transform: rotate(180deg); }
+  .detail { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
+  .node-row.open + .detail { max-height: 600px; }
+  .fmt-card { transition: all .2s ease; }
+  .fmt-card.match { transform: translateY(-3px); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(17,24,39,0.15); border-radius: 8px; }
+</style>
+</head>
+<body class="min-h-screen transition-colors">
+<div class="max-w-3xl mx-auto px-5 sm:px-6 py-8 sm:py-12">
+
+  <header class="flex items-center justify-between mb-10">
+    <a href="/" class="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-accent text-sm">
+      <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Studio
+    </a>
+    <button id="theme-toggle" class="p-2 rounded-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-softer">
+      <i data-lucide="moon" class="w-4 h-4 dark:hidden"></i>
+      <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+    </button>
+  </header>
+
+  <section class="mb-10">
+    <h1 class="text-3xl font-extrabold tracking-tight mb-3">How orchestration works</h1>
+    <p class="text-gray-500 dark:text-gray-400">
+      One request goes through 7 fixed steps. Only one of them touches an actual
+      document skill — this page shows exactly how a request gets routed to the right
+      one, and what happens on either side of it. Full accuracy-checked technical
+      writeup: <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">ARCHITECTURE.md</code>
+      in the repo root.
+    </p>
+  </section>
+
+  <!-- 1. Interactive classifier -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl2 shadow-soft border border-gray-100 dark:border-gray-800 p-5 sm:p-6 mb-6">
+    <h2 class="font-semibold mb-1">1. Format &amp; skill detection</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      Type a request below to see which skill it would route to.
+      <strong>This box uses a simplified keyword match for illustration only</strong> —
+      the real <code>Planner</code> node (<code>app/nodes/planner.py</code>) uses Claude
+      itself to classify, not keyword matching.
+    </p>
+    <input id="classify-input" type="text" placeholder="e.g. build me a pitch deck for..."
+      class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-accent" />
+    <div class="flex flex-wrap gap-2 mt-3">
+      <button class="preset chip text-xs px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" data-text="Write a one-page project status report">docx example</button>
+      <button class="preset chip text-xs px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" data-text="Create a 4-slide investor pitch deck">pptx example</button>
+      <button class="preset chip text-xs px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" data-text="Build a budget spreadsheet with formulas">xlsx example</button>
+      <button class="preset chip text-xs px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" data-text="Fill out this PDF form">pdf example</button>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5" id="format-cards"></div>
+
+    <div class="mt-5 bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-400 mb-2">What OfficeSkill actually sends to Claude for this format:</p>
+      <pre id="code-snippet" class="text-xs font-mono text-accent overflow-x-auto"></pre>
+    </div>
+  </section>
+
+  <!-- 2. Pipeline -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl2 shadow-soft border border-gray-100 dark:border-gray-800 p-5 sm:p-6 mb-6">
+    <h2 class="font-semibold mb-1">2. The 7-node pipeline</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Click any step for details.</p>
+    <div id="pipeline-nodes" class="space-y-2"></div>
+  </section>
+
+  <!-- 3. Validation differences -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl2 shadow-soft border border-gray-100 dark:border-gray-800 p-5 sm:p-6 mb-6">
+    <h2 class="font-semibold mb-1">3. Validation is format-specific, on purpose</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      No LLM call here — deterministic Python, reusing each skill's own OOXML scripts
+      rather than a second, hand-rolled parser. What counts as "valid" differs by format
+      because the skills themselves have different degrees of creative license.
+    </p>
+    <div id="validation-cards" class="space-y-3"></div>
+  </section>
+
+</div>
+
+<script>
+const FORMATS = {
+  docx: {
+    label: 'DOCX', icon: 'file-text', color: 'blue',
+    description: 'Document creation & editing — tracked changes, comments, formatting, text extraction.',
+    triggers: ['report', 'letter', 'memo', 'proposal', 'resume', 'document', 'doc'],
+  },
+  pptx: {
+    label: 'PPTX', icon: 'presentation', color: 'orange',
+    description: 'Presentation creation & editing — new decks, layouts, speaker notes.',
+    triggers: ['deck', 'presentation', 'slide', 'pitch', 'pptx'],
+  },
+  xlsx: {
+    label: 'XLSX', icon: 'table-2', color: 'emerald',
+    description: 'Spreadsheet creation & analysis — formulas, formatting, data, visualization.',
+    triggers: ['spreadsheet', 'excel', 'budget', 'data', 'table', 'formula', 'csv', 'xlsx'],
+  },
+  pdf: {
+    label: 'PDF', icon: 'file', color: 'red',
+    description: 'PDF manipulation — extraction, creation, merge/split, forms.',
+    triggers: ['form', 'fill', 'pdf', 'merge', 'split'],
+  },
+};
+
+const COLOR_CLASSES = {
+  blue: 'text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400 border-blue-200 dark:border-blue-900',
+  orange: 'text-orange-600 bg-orange-50 dark:bg-orange-950 dark:text-orange-400 border-orange-200 dark:border-orange-900',
+  emerald: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900',
+  red: 'text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400 border-red-200 dark:border-red-900',
+};
+
+const NODES = [
+  { key: 'planner', title: 'Planner', claude: true, subtitle: 'Classifies format, drafts outline',
+    detail: 'Plain <code>client.messages.create()</code>, forced tool-use (<code>submit_plan</code>). No code execution, no skills container. <br><br><strong>Output:</strong> <code>{format, outline, needs_research}</code> — <code>format</code> is what everything downstream, including which skill gets touched, is keyed on.',
+    file: 'app/nodes/planner.py' },
+  { key: 'research', title: 'Research', claude: true, subtitle: 'Flags gaps, no retrieval wired up',
+    detail: 'Only runs if <code>needs_research</code> is true; otherwise skipped entirely (no call at all). When it runs: forced tool-use (<code>submit_research_notes</code>). No web search or database access exists — it proposes clearly-labeled placeholder assumptions instead of fabricating facts.',
+    file: 'app/nodes/research.py' },
+  { key: 'content', title: 'Content', claude: true, subtitle: 'Writes the actual content',
+    detail: 'Forced tool-use (<code>submit_content_plan</code>). Produces <code>{title, sections: [heading|paragraph|bullet_list]}</code> — format-agnostic, same shape whether the target is docx or pptx.',
+    file: 'app/nodes/content.py' },
+  { key: 'layout', title: 'Layout', claude: true, subtitle: 'Tone + color palette suggestions',
+    detail: 'Forced tool-use (<code>submit_layout_notes</code>). Pure styling guidance handed to OfficeSkill\'s prompt — never touches file bytes itself.',
+    file: 'app/nodes/layout.py' },
+  { key: 'office_skill', title: 'OfficeSkill', claude: true, highlight: true, subtitle: 'The only node that generates the file',
+    detail: '<code>client.beta.messages.create()</code>, betas <code>code-execution-2025-08-25</code> + <code>skills-2025-10-02</code>. <code>container.skills</code> references the Anthropic-hosted skill matching <code>state.format</code> — <strong>this is the actual skill-selection mechanism</strong>, one line above. Claude reads that skill\'s <code>SKILL.md</code> live, writes and runs real generation code, renders to PDF, visually inspects the result, exports. System prompt = this project\'s custom orchestration skill (<code>mnt/skills/private/ai-document-platform/</code>), inlined and cached.',
+    file: 'app/nodes/office_skill.py' },
+  { key: 'validation', title: 'Validation', claude: false, subtitle: 'Deterministic, format-specific — see section 3',
+    detail: 'No LLM call. Reuses <code>mnt/skills/public/&lt;format&gt;/ooxml/scripts/unpack.py</code> rather than a second OOXML parser. Exactly what "valid" means differs by format — see section 3 below.',
+    file: 'app/nodes/validation.py' },
+  { key: 'export', title: 'Export', claude: false, subtitle: 'Pass-through',
+    detail: 'No LLM call. Surfaces <code>file_path</code> as <code>download_path</code> if validation passed, empty string otherwise.',
+    file: 'app/nodes/export.py' },
+];
+
+const VALIDATIONS = [
+  { fmt: 'docx', title: 'DOCX — title word-match', body: 'Unpacks the file, checks <code>word/document.xml</code> <strong>plus headers/footers</strong> for the content plan\'s title words (case-insensitive, any order). Learned live: titles can legitimately render in all-caps or live in a running header, not the body — exact-substring matching flagged both as false failures.' },
+  { fmt: 'pptx', title: 'PPTX — structural only, title wording NOT checked', body: '<code>html2pptx.md</code> (the skill\'s own guidance) tells the model to invent creative branding — a generic working title can legitimately become a made-up product name with zero words in common. So this only checks: file unpacks, has ≥1 slide, no slide is empty.' },
+  { fmt: 'xlsx', title: 'XLSX — openpyxl can open it', body: 'Loads the workbook with <code>openpyxl</code>, confirms it has at least one sheet.' },
+  { fmt: 'pdf', title: 'PDF — magic bytes', body: 'Confirms the file starts with the <code>%PDF-</code> header.' },
+];
+
+function classify(text) {
+  const lower = text.toLowerCase();
+  for (const [fmt, meta] of Object.entries(FORMATS)) {
+    if (meta.triggers.some(t => lower.includes(t))) return fmt;
+  }
+  return null;
+}
+
+function renderFormatCards(matched) {
+  const el = document.getElementById('format-cards');
+  el.innerHTML = Object.entries(FORMATS).map(([key, f]) => `
+    <div class="fmt-card ${matched === key ? 'match' : ''} rounded-xl border p-3 text-center ${matched === key ? COLOR_CLASSES[f.color] : 'border-gray-200 dark:border-gray-700 text-gray-400'}">
+      <i data-lucide="${f.icon}" class="w-5 h-5 mx-auto mb-1"></i>
+      <p class="text-xs font-semibold">${f.label}</p>
+    </div>
+  `).join('');
+  lucide.createIcons();
+}
+
+function updateSnippet(fmt) {
+  const el = document.getElementById('code-snippet');
+  const f = FORMATS[fmt];
+  el.textContent =
+`container: {
+  skills: [{ type: "anthropic", skill_id: "${fmt}", version: "latest" }]
+}
+// Claude reads mnt/skills/public/${fmt}/SKILL.md live:
+// "${f.description}"`;
+}
+
+function runClassify(text) {
+  const fmt = classify(text) || 'docx';
+  renderFormatCards(fmt);
+  updateSnippet(fmt);
+}
+
+document.getElementById('classify-input').addEventListener('input', (e) => runClassify(e.target.value));
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('classify-input').value = btn.dataset.text;
+    runClassify(btn.dataset.text);
+  });
+});
+runClassify('Write a one-page project status report');
+
+function renderPipeline() {
+  const el = document.getElementById('pipeline-nodes');
+  el.innerHTML = NODES.map(n => `
+    <div>
+      <div class="node-row flex items-center gap-3 p-3 rounded-xl border ${n.highlight ? 'border-accent/40 bg-accent/5' : 'border-gray-100 dark:border-gray-800'}" data-key="${n.key}">
+        <span class="w-2 h-2 rounded-full ${n.claude ? 'bg-accent' : 'bg-gray-300 dark:bg-gray-600'} shrink-0"></span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium">${n.title} ${n.claude ? '<span class="text-xs text-accent font-normal">Claude call</span>' : '<span class="text-xs text-gray-400 font-normal">no LLM call</span>'}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">${n.subtitle}</p>
+        </div>
+        <i data-lucide="chevron-down" class="chevron w-4 h-4 text-gray-400 shrink-0"></i>
+      </div>
+      <div class="detail px-3 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+        <div class="py-3">${n.detail}<br><br><code class="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">${n.file}</code></div>
+      </div>
+    </div>
+  `).join('');
+  lucide.createIcons();
+
+  document.querySelectorAll('.node-row').forEach(row => {
+    row.addEventListener('click', () => row.classList.toggle('open'));
+  });
+}
+renderPipeline();
+
+function renderValidations() {
+  const el = document.getElementById('validation-cards');
+  el.innerHTML = VALIDATIONS.map(v => {
+    const f = FORMATS[v.fmt];
+    return `
+      <div class="flex gap-3 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${COLOR_CLASSES[f.color]}">
+          <i data-lucide="${f.icon}" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <p class="text-sm font-medium">${v.title}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${v.body}</p>
+        </div>
+      </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+renderValidations();
+
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+}
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+});
+initTheme();
+
+lucide.createIcons();
+</script>
+</body>
+</html>

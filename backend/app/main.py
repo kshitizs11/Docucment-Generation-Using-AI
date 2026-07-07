@@ -8,10 +8,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
+from app.auth import require_api_key
 from app.graph import doc_gen_graph
 from app.jobs import create_job, get_job, list_jobs, update_job
 
@@ -79,14 +80,19 @@ def _run_job(job_id: str, request_text: str) -> None:
         update_job(job_id, status="failed", finished_at=time.time(), error=str(e))
 
 
-@app.post("/generate", response_model=GenerateAcceptedResponse, status_code=202)
+@app.post(
+    "/generate",
+    response_model=GenerateAcceptedResponse,
+    status_code=202,
+    dependencies=[Depends(require_api_key)],
+)
 def generate(body: GenerateRequest, background_tasks: BackgroundTasks) -> GenerateAcceptedResponse:
     job_id = create_job(body.request)
     background_tasks.add_task(_run_job, job_id, body.request)
     return GenerateAcceptedResponse(job_id=job_id)
 
 
-@app.get("/jobs/{job_id}", response_model=JobStatusResponse)
+@app.get("/jobs/{job_id}", response_model=JobStatusResponse, dependencies=[Depends(require_api_key)])
 def job_status(job_id: str) -> JobStatusResponse:
     job = get_job(job_id)
     if job is None:
@@ -107,7 +113,7 @@ def job_status(job_id: str) -> JobStatusResponse:
     )
 
 
-@app.get("/jobs/{job_id}/download")
+@app.get("/jobs/{job_id}/download", dependencies=[Depends(require_api_key)])
 def job_download(job_id: str):
     job = get_job(job_id)
     if job is None or job["status"] != "completed":
@@ -121,12 +127,17 @@ def index() -> str:
     return (STATIC_DIR / "index.html").read_text()
 
 
+@app.get("/architecture", response_class=HTMLResponse)
+def architecture() -> str:
+    return (STATIC_DIR / "architecture.html").read_text()
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/jobs")
+@app.get("/jobs", dependencies=[Depends(require_api_key)])
 def jobs_list() -> dict:
     """
     Backs the UI's "Recent generations" panel with real, session-scoped data (see

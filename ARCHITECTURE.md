@@ -4,6 +4,11 @@ How a prompt typed into the browser becomes a downloaded `.docx`/`.pptx`/`.xlsx`
 This is the complete, accurate picture of what actually runs — every claim here is
 backed by the code in `backend/app/` (file references throughout).
 
+**Interactive version**: run the app (`python app.py`) and open `/architecture` —
+click through the same 7 nodes described below, and try the format/skill-detection
+demo live (with a clear disclaimer where it's simplified for illustration vs. the
+real Claude-driven classification).
+
 ## System diagram
 
 ```

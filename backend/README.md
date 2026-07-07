@@ -144,6 +144,16 @@ that's the right amount of infrastructure for proving the async flow works at al
 Swap it for a real queue (Redis/Celery/etc.) when there's an actual multi-worker
 deployment to target.
 
+## API auth for backend-to-backend calls
+
+`app/auth.py` — opt-in shared-secret check (`X-API-Key` header vs. `SERVICE_API_KEY`
+env var), applied to `/generate`, `/jobs/{id}`, `/jobs/{id}/download`, `/jobs`. Off by
+default (empty `SERVICE_API_KEY` = current no-auth behavior, unchanged). Verified both
+states directly: unset → 200 with no header; set → 401 on missing/wrong header, 200 on
+the correct one. See `INTEGRATION.md` if another service is calling this one. Note:
+turning this on breaks the bundled browser UI, which doesn't send the header — that's
+an accepted trade-off for the backend-to-backend case, not an oversight.
+
 ## What's real vs. explicitly out of scope
 
 Every node does genuine work — nothing here is faked. Two integrations are

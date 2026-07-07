@@ -1,0 +1,13 @@
+.git/
+.claude/
+.claude-plugin/
+backend/.env
+backend/output/
+backend/__pycache__/
+backend/**/__pycache__/
+tools/
+RUNBOOK.md
+ARCHITECTURE.md
+README.md
+*.pyc
+.DS_Store
