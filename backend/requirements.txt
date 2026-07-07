@@ -3,3 +3,9 @@ uvicorn>=0.30.0
 langgraph>=1.1.0
 anthropic>=0.116.0
 python-dotenv>=1.0.0
+
+# Used by app/nodes/validation.py: defusedxml by mnt/skills/public/*/ooxml/scripts/unpack.py
+# (docx/pptx checks), openpyxl for xlsx checks. Both run locally -- no Node/npm needed,
+# see the note in RUNBOOK.md.
+defusedxml>=0.7.1
+openpyxl>=3.1.0

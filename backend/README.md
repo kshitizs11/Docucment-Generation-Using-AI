@@ -51,6 +51,9 @@ cp .env.example .env
 
 ## Run
 
+From the repo root: `python app.py` (see `../README.md` / `../RUNBOOK.md`). Or directly
+from here:
+
 ```bash
 uvicorn app.main:app --reload
 ```
