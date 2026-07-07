@@ -29,24 +29,41 @@ to expect and how to read failures.
 
 ## Architecture
 
-```
-prompt → [Planner] → [Research] → [Content] → [Layout] → [OfficeSkill] → [Validation] → [Export] → file
-           plain       plain        plain       plain      Claude +        no LLM       no LLM
-           Claude      Claude       Claude      Claude     code-exec +     (reuses      (pass-
-           call        call        call        call       skills betas    skill's      through)
-                                                            (only node       own OOXML
-                                                            that touches     scripts)
-                                                            file generation)
+```mermaid
+flowchart TD
+    U["Browser: user types a prompt"] -->|"POST /generate"| G1["FastAPI creates job_id<br/>returns 202 immediately"]
+    G1 --> BG["BackgroundTask starts the<br/>LangGraph pipeline"]
+
+    subgraph PIPE["7-node pipeline"]
+        direction TB
+        P1["Planner<br/>Claude — classifies format + outline"]
+        P2["Research<br/>Claude — only if needed"]
+        P3["Content<br/>Claude — writes the content plan"]
+        P4["Layout<br/>Claude — tone + color palette"]
+        P5["OfficeSkill<br/>Claude + code-execution + skills"]
+        P6["Validation<br/>deterministic Python, no LLM"]
+        P7["Export<br/>pass-through, no LLM"]
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    end
+
+    BG --> P1
+    P5 -->|"skill_id = state.format"| SKILL{"docx / pptx / xlsx / pdf?"}
+    SKILL --> SANDBOX["Anthropic sandbox: reads that skill's<br/>SKILL.md live, writes + runs code,<br/>renders to PDF, self-verifies, exports"]
+    SANDBOX -->|file_id| P5
+
+    P7 --> DONE["completed"]
+    DONE -->|"polled by browser"| DL["Download button → file"]
 ```
 
 `POST /generate` returns a `job_id` immediately and runs this pipeline in the
 background (generation takes real minutes); the UI polls `GET /jobs/{id}` for live
 progress and downloads from `GET /jobs/{id}/download` once done.
 
-Full diagrams, the exact request lifecycle, and a table of what each node actually
-does: **[`ARCHITECTURE.md`](ARCHITECTURE.md)**. Or explore it interactively — once the
-app is running, open `http://127.0.0.1:8000/architecture` for a clickable version with
-a live format/skill-detection demo.
+Full diagrams (including the exact skill-selection branching), the request
+lifecycle, and a table of what each node actually does:
+**[`ARCHITECTURE.md`](ARCHITECTURE.md)**. Or explore it interactively — once the app
+is running, open `http://127.0.0.1:8000/architecture` for a clickable version with a
+live format/skill-detection demo.
 
 ## What's in this repo
 

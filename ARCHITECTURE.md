@@ -9,7 +9,54 @@ click through the same 7 nodes described below, and try the format/skill-detecti
 demo live (with a clear disclaimer where it's simplified for illustration vs. the
 real Claude-driven classification).
 
-## System diagram
+## Flow diagram — request → orchestration → file
+
+Renders natively on GitHub. Verified against the real `mermaid.js` parser and
+visually rendered before being added here — not just hand-written and hoped for.
+
+```mermaid
+flowchart TD
+    U["Browser: user types a prompt"] -->|"POST /generate"| G1["FastAPI creates job_id<br/>returns 202 immediately"]
+    G1 --> BG["BackgroundTask starts the<br/>LangGraph pipeline"]
+
+    subgraph PIPE["7-node pipeline (app/graph.py)"]
+        direction TB
+        P1["Planner<br/>Claude, tool-use<br/>classifies format + outline"]
+        P2["Research<br/>Claude, tool-use<br/>only if needed"]
+        P3["Content<br/>Claude, tool-use<br/>writes the content plan"]
+        P4["Layout<br/>Claude, tool-use<br/>tone + color palette"]
+        P5["OfficeSkill<br/>Claude + code-execution + skills"]
+        P6["Validation<br/>deterministic Python, no LLM"]
+        P7["Export<br/>pass-through, no LLM"]
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    end
+
+    BG --> P1
+
+    P5 -->|"container.skills:<br/>skill_id = state.format"| SKILL{"Which format?"}
+    SKILL -->|docx| SD["Anthropic-hosted<br/>docx skill"]
+    SKILL -->|pptx| SP["Anthropic-hosted<br/>pptx skill"]
+    SKILL -->|xlsx| SX["Anthropic-hosted<br/>xlsx skill"]
+    SKILL -->|pdf| SF["Anthropic-hosted<br/>pdf skill"]
+    SD --> SANDBOX["Sandboxed container:<br/>reads SKILL.md live, writes + runs code,<br/>renders to PDF, self-verifies, exports"]
+    SP --> SANDBOX
+    SX --> SANDBOX
+    SF --> SANDBOX
+    SANDBOX -->|"file_id"| P5
+
+    P7 --> DONE["Job status: completed"]
+    DONE -->|"polled by browser"| POLL["GET /jobs/{job_id}"]
+    POLL --> DL["Download button appears"]
+    DL -->|"GET /jobs/{job_id}/download"| FILE["File downloaded"]
+```
+
+The decision point in the middle (`Which format?`) is the literal skill-selection
+mechanism: `state["format"]` (set by the Planner node) becomes the `skill_id` passed
+to Anthropic's hosted skills container — that one value is what routes a request to
+the docx/pptx/xlsx/pdf skill's own `SKILL.md`. See the interactive version above for a
+live demo of that specific step.
+
+## System diagram (component view)
 
 ```
 ┌─────────────┐   POST /generate    ┌───────────────────────────────┐
