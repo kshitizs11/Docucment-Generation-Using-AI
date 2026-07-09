@@ -36,6 +36,31 @@ print(result)
 - **`output_path`** — exactly where to save the result; the file extension
   (`.docx`/`.pptx`/`.xlsx`/`.pdf`) is what decides the format — nothing else does
 
+### Want docx or xlsx instead of pptx?
+
+Same function, same `input_path` — just change `output_path`'s extension. That's the
+whole rule: **the output file's extension decides the format**, nothing else does.
+
+```python
+# docx, from the same CSV
+result = f.generate_from_reference(
+    query="Summarize the top 5 highest-cost models as a short report",
+    input_path="metrics (1).csv",
+    output_path="metrics_summary.docx",
+)
+
+# xlsx, from the same CSV
+result = f.generate_from_reference(
+    query="Turn this into a clean spreadsheet with a summary tab",
+    input_path="metrics (1).csv",
+    output_path="metrics_summary.xlsx",
+)
+```
+
+Note: supported **output** formats are `.docx`, `.pptx`, `.xlsx`, `.pdf` — not raw
+`.csv`. Your `input_path` (the reference data) can be `.csv` regardless of what
+output format you're generating; they're independent of each other.
+
 **No reference file, just a prompt?** Use `generate` instead — same idea, but you pass
 `format=` directly instead of an `output_path` extension deciding it:
 
