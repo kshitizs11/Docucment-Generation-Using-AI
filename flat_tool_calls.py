@@ -25,7 +25,15 @@ Don't have a content_plan yet, just a plain-English prompt? Use plan_content() f
     result = call_pptx_tool(plan)
 plan_content() is a separate, cheap, fast call (plain tool-use, no code execution) --
 seconds, not minutes -- and does not decide the format for you; you still choose which
-call_<format>_tool to pass its output into.
+call_<format>_tool to pass its output into. Or use generate(prompt, format) to do both
+steps in one call.
+
+Have a CSV/Excel file you want the document grounded in? Use generate_from_reference():
+    result = generate_from_reference("summarize the top 5 rows by cost, text-only",
+                                      input_path="metrics.csv", output_path="out.pptx")
+Format is inferred from output_path's extension. Keep data-heavy asks simple (no
+tables/charts) -- a richer ask over many rows was observed to blow past the 1M-token
+context limit inside the generation session; see FLAT_TOOL_CALLS.md for the full note.
 
 Verified behavior this duplicates (see the original for the live-testing history that
 produced these exact parameter choices -- max_tokens=16000, the specific betas, the
@@ -128,13 +136,23 @@ def plan_content(prompt, api_key=None):
     client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
         model=MODEL,
-        max_tokens=2048,
+        # 2048 was observed to truncate mid-response once a large reference file (see
+        # generate_from_reference) got folded into the prompt -- stop_reason came back
+        # "max_tokens" with only {"title": ...} written, no "sections" yet. Same class
+        # of bug as office_skill.py's max_tokens=4096 truncation; fixed the same way.
+        max_tokens=8192,
         system=_PLAN_SYSTEM_PROMPT,
         tools=[_PLAN_TOOL],
         tool_choice={"type": "tool", "name": "submit_content_plan"},
         messages=[{"role": "user", "content": prompt}],
     )
     tool_use = next(b for b in response.content if b.type == "tool_use")
+    if "sections" not in tool_use.input:
+        raise RuntimeError(
+            f"plan_content: incomplete tool_use input (stop_reason={response.stop_reason!r}, "
+            f"got keys {list(tool_use.input.keys())!r}) -- likely truncated by max_tokens; "
+            f"increase it if this keeps happening with large prompts"
+        )
     return {"title": tool_use.input["title"], "sections": tool_use.input["sections"]}
 
 
@@ -1021,3 +1039,88 @@ def generate(prompt, format, layout_notes=None, assumptions=None, api_key=None, 
     content_plan = plan_content(prompt, api_key=api_key)
     tool = _TOOL_BY_FORMAT[format]
     return tool(content_plan, layout_notes=layout_notes, assumptions=assumptions, api_key=api_key, output_dir=output_dir)
+
+
+# ============================================================================
+# Reference-file variant -- ground generation in a CSV/Excel file's actual data.
+# ============================================================================
+
+def _read_reference_file(path, max_chars=20000):
+    """
+    Reads a CSV or Excel file into a plain-text table representation, for folding
+    into a prompt. CSV needs no extra dependency (stdlib only). Excel (.xlsx/.xls)
+    needs openpyxl -- imported lazily here, only if actually used, so CSV-only use of
+    this file never requires it (keeping the "one dependency" promise for that case).
+    """
+    from pathlib import Path
+
+    ext = Path(path).suffix.lower()
+    if ext == ".csv":
+        text = Path(path).read_text(errors="ignore")
+    elif ext in (".xlsx", ".xls"):
+        import openpyxl  # lazy: only needed for this branch
+
+        wb = openpyxl.load_workbook(path, data_only=True)
+        lines = []
+        for ws in wb.worksheets:
+            lines.append(f"# Sheet: {ws.title}")
+            for row in ws.iter_rows(values_only=True):
+                lines.append(",".join("" if c is None else str(c) for c in row))
+        text = "\n".join(lines)
+    else:
+        raise ValueError(f"Unsupported reference file type: {ext!r} (expected .csv, .xlsx, or .xls)")
+
+    if len(text) > max_chars:
+        text = text[:max_chars] + f"\n...[truncated, {len(text) - max_chars} more characters not shown]"
+    return text
+
+
+def generate_from_reference(query, input_path, output_path, api_key=None):
+    """
+    Like generate(), but also loads a CSV/Excel reference file at `input_path` and
+    folds its actual data into the prompt used for planning -- e.g. "summarize this
+    spreadsheet as a deck." The model is told to ground the content in this data, not
+    invent different numbers.
+
+    Output format is inferred from output_path's extension (.docx/.pptx/.xlsx/.pdf) --
+    no separate format= argument, unlike generate(). Saves the final file at exactly
+    output_path (not a directory + random filename, unlike call_<format>_tool).
+
+    Returns the same {"ok": ...} shape as every other function in this file.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    out = Path(output_path)
+    fmt = out.suffix.lstrip(".").lower()
+    if fmt not in _TOOL_BY_FORMAT:
+        return {
+            "ok": False,
+            "error": f"Can't infer format from output_path {output_path!r}; expected one of {sorted(_TOOL_BY_FORMAT)}",
+        }
+
+    try:
+        reference_text = _read_reference_file(input_path)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not read input_path {input_path!r}: {e}"}
+
+    augmented_query = (
+        f"{query}\n\n"
+        f"Use the following reference data (from {Path(input_path).name}) as the "
+        f"factual basis for the document -- ground the content in these actual "
+        f"rows/numbers, don't invent different ones:\n\n{reference_text}"
+    )
+
+    content_plan = plan_content(augmented_query, api_key=api_key)
+
+    tmp_dir = tempfile.mkdtemp()
+    tool = _TOOL_BY_FORMAT[fmt]
+    result = tool(content_plan, api_key=api_key, output_dir=tmp_dir)
+    if not result.get("ok"):
+        return result
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(result["file_path"], str(out))
+    result["file_path"] = str(out)
+    return result
